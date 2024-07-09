@@ -13,7 +13,8 @@ typedef enum {
 
     EXPR_NUM = 0,
     EXPR_CELL,
-    EXPR_BIN_OP
+    EXPR_BIN_OP,
+    EXPR_INVALID
 } ExprKind;
 
 typedef struct {
@@ -158,13 +159,13 @@ void print_cell(Cell* cell) {
 
         case KIND_TEXT: {
 
-            printf("%*.s"SSFormat"|", max_cell_width - cell->as.text.count, " ",  SSArg(cell->as.text));
+            printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.text.count, " ",  SSArg(cell->as.text));
             return;
         }
 
         case KIND_EXPR: {
 
-            printf(SSFormat"|", SSArg(cell->as.expression.expr));
+            printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
             return;
         }
 
@@ -181,25 +182,25 @@ void print_cell_kind(Cell* cell) {
 
         case KIND_EMPTY: {
 
-            printf("EMPTY|");
+            printf("%*s|", 5, "EMPTY");
             return;
         }
 
         case KIND_NUM: {
 
-            printf("NUM|");
+            printf("%*s|", 5, "NUM");
             return;
         }
 
         case KIND_TEXT: {
 
-            printf("TEXT|");
+            printf("%*s|", 5, "TEXT");
             return;
         }
 
         case KIND_EXPR: {
 
-            printf("EXPR|");
+            printf("%*s|", 5, "EXPR");
             return;
         }
         
@@ -240,7 +241,35 @@ void populate_table(Table* table, StringStruct input) {
 
 void print_table(Table* table) {
 
+    printf("\n LE |");
+
+    int left_padding = 0;
+    int right_padding = 0;
+
+    if(max_cell_width % 2) {
+
+        left_padding = max_cell_width / 2;
+        right_padding = max_cell_width / 2;
+        
+    } else {
+
+
+        left_padding = max_cell_width / 2 - 1;
+        right_padding = max_cell_width / 2;
+    }
+
+    for(int i = 0; i < table->cols; i++) {
+
+        printf("%*s%c%*s|", left_padding, " ", 'A' + i, right_padding, " ");
+    }
+
+    printf("\n");
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); 
+    printf("\n");
+
     for(int row = 0; row < table->rows; row++) {
+
+        printf("|%*d|", 3, row);
 
         for(int col = 0; col < table->cols; col++) {
 
@@ -248,17 +277,57 @@ void print_table(Table* table) {
         }
         printf("\n");
     }
+    
+
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); 
+    printf("\n");
 }
 
 void print_table_kind(Table* table) {
 
+    printf("\n");
+    for(int i = 0; i < table->cols * 6 + 1; i++) printf("%c", '-'); 
+    printf("\n");
+
     for(int row = 0; row < table->rows; row++) {
+
+        printf("|");
 
         for(int col = 0; col < table->cols; col++) {
 
             print_cell_kind(cell_at(table, row, col));
         }
         printf("\n");
+    }
+    
+    for(int i = 0; i < table->cols * 6 + 1; i++) printf("%c", '-'); 
+    printf("\n");
+}
+/*
+    =A1+B1
+
+
+*/
+void parse_expression(Expr* expression) {
+
+    StringStruct expr = expression->expr;
+
+    printf(SSFormat"\n", SSArg(expr));
+}
+
+void parse_expressions(Table* table) {
+
+    for(int row = 0; row < table->rows; row++) {
+
+        for(int col = 0; col < table->cols; col++) {
+
+            Cell* cell = cell_at(table, row, col);
+
+            if(cell->kind == KIND_EXPR) {
+
+                parse_expression(&cell->as.expression);
+            }
+        }
     }
 }
 
@@ -284,15 +353,18 @@ int main(int argc, char* argv[]) {
 
     approx_table_size(input, &rows, &cols);
 
+    if(cols > 26) printf("ERROR: This program currently only supports up to 26 columns.\n");
+
     Table table = alloc_table(rows, cols);
 
     populate_table(&table, input);
 
+    max_cell_width += 2;
+
     print_table(&table);
-    print_table_kind(&table);
+    //print_table_kind(&table);
 
-    printf("%d\n", max_cell_width);
-
+    parse_expressions(&table);
 
 
     return 0;
