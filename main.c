@@ -364,7 +364,7 @@ int main(int argc, char* argv[]) {
     print_table(&table);
     //print_table_kind(&table);
 
-    parse_expressions(&table);
+    //parse_expressions(&table);
 
 
     return 0;

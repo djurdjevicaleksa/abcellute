@@ -113,8 +113,6 @@ StringStruct ss_copy_n(StringStruct ss, size_t n) {
     return ss_form_string(ss.data, l);
 }
 
-
-
 bool c_isdigit(char character) {
 
     return (character >= '0' && character <= '9');
@@ -140,7 +138,33 @@ bool c_isalnum(char character) {
     return c_isdigit(character) || c_isletter(character);
 }
 
+bool ss_isword(StringStruct ss) {
 
+    for(int i = 0; i < ss.count; i++) {
+
+        if(!c_isletter(c_charat(&ss, i))) return false;
+    }
+    return true;
+}
+
+bool ss_isnumber(StringStruct ss) {
+
+    size_t periods = 0;
+
+    for(int i = 0; i < ss.count; i++) {
+
+        if(c_charat(&ss, i) == '.') {
+
+            periods++;
+            
+            if(periods > 1) return false;
+            continue;
+        }
+
+        if(!c_isdigit(c_charat(&ss, i))) return false;
+    }
+    return true;
+}
 
 char c_tolower(char character) {
 
@@ -154,8 +178,25 @@ char c_toupper(char character) {
     return character;
 }
 
+double ss_tod(StringStruct ss) {
 
+    char buffer[ss.count + 1];
+    strncpy(buffer, ss.data, ss.count);
+    buffer[ss.count] = '\0';
 
+    return strtod(buffer, NULL);
+
+}
+
+float ss_tof(StringStruct ss) {
+
+    char buffer[ss.count + 1];
+    strncpy(buffer, ss.data, ss.count);
+    buffer[ss.count] = '\0';
+
+    return strtof(buffer, NULL);
+
+}
 
 bool ss_is_empty(StringStruct* ss) {
 
@@ -220,52 +261,4 @@ char c_charat(StringStruct* ss, int index) {
     if(index < 0 || index >= ss->count) return '\0';
 
     return *(ss->data + index);
-}
-
-bool ss_isword(StringStruct ss) {
-
-    for(int i = 0; i < ss.count; i++) {
-
-        if(!c_isletter(c_charat(&ss, i))) return false;
-    }
-    return true;
-}
-
-bool ss_isnumber(StringStruct ss) {
-
-    size_t periods = 0;
-
-    for(int i = 0; i < ss.count; i++) {
-
-        if(c_charat(&ss, i) == '.') {
-
-            periods++;
-            
-            if(periods > 1) return false;
-            continue;
-        }
-
-        if(!c_isdigit(c_charat(&ss, i))) return false;
-    }
-    return true;
-}
-
-double ss_tod(StringStruct ss) {
-
-    char buffer[ss.count + 1];
-    strncpy(buffer, ss.data, ss.count);
-    buffer[ss.count] = '\0';
-
-    return strtod(buffer, NULL);
-
-}
-
-float ss_tof(StringStruct ss) {
-
-    char buffer[ss.count + 1];
-    strncpy(buffer, ss.data, ss.count);
-    buffer[ss.count] = '\0';
-
-    return strtof(buffer, NULL);
-
 }
