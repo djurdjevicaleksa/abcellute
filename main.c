@@ -3,17 +3,24 @@
 #include <string.h>
 #include <assert.h>
 
+#define _SS_IMPLEMENT
 #include "ss.h"
 
 #define DECIMAL_PLACES 2
+#define EXTRA_CELL_SPACE 2
+
+#define ANSI_RESET      "\x1b[0m"
+#define ANSI_RED        "\x1b[31m"
+#define ANSI_GREEN      "\x1b[32m"
+#define ANSI_BOLD_RED   "\x1b[1;31m"
 
 int max_cell_width = 0;
+int expression_count = 0; //for dynamic allocation of graph nodes later
 
 typedef enum {
 
-    EXPR_NUM = 0,
-    EXPR_CELL,
-    EXPR_BIN_OP,
+    EXPR_DEFAULT = 0,
+    EXPR_VALID,
     EXPR_INVALID
 } ExprKind;
 
@@ -165,13 +172,20 @@ void print_cell(Cell* cell) {
 
         case KIND_EXPR: {
 
-            printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+            if(cell->as.expression.kind == EXPR_INVALID) {
+
+                printf(ANSI_RED "%*.s"SSFormat ANSI_RESET "|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+            } else {
+
+                printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+            }
+            
             return;
         }
 
         default: {
 
-            assert(0 && "Unreachable code");
+            assert(0 && "You did the undoable. Great job!");
         }
     }
 }
@@ -225,7 +239,9 @@ void populate_table(Table* table, StringStruct input) {
             if(ss_starts_with(&token, '=')) {
 
                 cell_at(table, rows, cols)->as.expression.expr = token;
+                cell_at(table, rows, cols)->as.expression.kind = EXPR_DEFAULT;
                 cell_at(table, rows, cols)->kind = KIND_EXPR;
+                expression_count++;
             } else if(ss_isnumber(token)) {
 
                 cell_at(table, rows, cols)->as.number = ss_tod(token);
@@ -237,6 +253,8 @@ void populate_table(Table* table, StringStruct input) {
             }
         }
     }
+
+    max_cell_width += EXTRA_CELL_SPACE;
 }
 
 void print_table(Table* table) {
@@ -258,18 +276,18 @@ void print_table(Table* table) {
         right_padding = max_cell_width / 2;
     }
 
-    for(int i = 0; i < table->cols; i++) {
+    for(int i = 0; i < table->cols; i++) { // columns header
 
         printf("%*s%c%*s|", left_padding, " ", 'A' + i, right_padding, " ");
     }
 
     printf("\n");
-    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); 
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); //line separator
     printf("\n");
 
     for(int row = 0; row < table->rows; row++) {
 
-        printf("|%*d|", 3, row);
+        printf("|%*d|", 3, row); //row separator
 
         for(int col = 0; col < table->cols; col++) {
 
@@ -279,7 +297,7 @@ void print_table(Table* table) {
     }
     
 
-    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); 
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); //line separator
     printf("\n");
 }
 
@@ -303,19 +321,39 @@ void print_table_kind(Table* table) {
     for(int i = 0; i < table->cols * 6 + 1; i++) printf("%c", '-'); 
     printf("\n");
 }
-/*
-    =A1+B1
 
+bool token_iscellref(StringStruct token, int* out_row, int* out_column) {
 
-*/
-void parse_expression(Expr* expression) {
+    StringStruct input = ss_trim(token);
 
-    StringStruct expr = expression->expr;
+    char c = *((char*)(ss_cut_n(&input, 1).data));
+    if(!c_isupper(c)) return false;
 
-    printf(SSFormat"\n", SSArg(expr));
+    if(!ss_isnumber(input)) return false;
+
+    int num = (int)ss_tod(input);
+
+    if(num < 0 || num > 999) return false;
+
+    if(out_column) *out_column = (int)(c - 'A');
+    if(out_row) *out_row = num;
+
+    return true;
+
 }
 
-void parse_expressions(Table* table) {
+char find_first_operator(StringStruct ss) {
+
+    for(int i = 0; i < ss.count; i++) {
+
+        if(!c_isoperator(c_charat(&ss, i))) continue;
+        return c_charat(&ss, i);
+    }
+
+    return '\0';
+}
+
+void perform_syntax_analysis(Table* table) {
 
     for(int row = 0; row < table->rows; row++) {
 
@@ -325,15 +363,121 @@ void parse_expressions(Table* table) {
 
             if(cell->kind == KIND_EXPR) {
 
-                parse_expression(&cell->as.expression);
+
+
+
+                StringStruct expr = cell->as.expression.expr;
+                ss_cut_n(&expr, 1); //cut the '=' sign
+                expr = ss_trim(expr);
+
+                if(expr.count == 0) {
+
+                    cell->as.expression.kind = EXPR_INVALID;
+                    printf(ANSI_RED"[SYNTAX ERROR] Empty expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED".\n"ANSI_RESET, (char)('A' + col), row);
+                    continue;
+                }
+
+                while(expr.count > 0) {
+
+                    char c = find_first_operator(expr);
+
+                    if(c != '\0') {
+
+                        //ima operator
+
+                        StringStruct token = ss_cut_by_delim(&expr, c);
+                        expr = ss_trim(expr); //ready the next token
+
+                        if(expr.count == 0) { //posle cuttovanja operatora nema nista -> dangling operator
+
+                            cell->as.expression.kind = EXPR_INVALID;
+                            printf(ANSI_RED"[SYNTAX ERROR] Dangling operator in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            break;
+                        }
+
+                        if(!token_iscellref(token, NULL, NULL) && !ss_isnumber(token)) {
+
+                            cell->as.expression.kind = EXPR_INVALID;
+                            printf(ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            break;
+                        }
+
+
+                    } else {
+
+                        //ceo ostatak je token                          //+1 to make sure its the entire thing
+                        StringStruct token = ss_cut_n(&expr, expr.count + 1);
+                        assert(expr.count == 0);
+
+                        if(!token_iscellref(token, NULL, NULL) && !ss_isnumber(token)) {
+
+                            cell->as.expression.kind = EXPR_INVALID;
+                            printf(ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            break;
+                        }
+                    }
+                }
+
+
+
+
             }
         }
     }
 }
 
-int main(int argc, char* argv[]) {
+/*
+    EXPRESSION EVALUATION STEPS:
 
-    //otvori fajl, saznaj koliki je, alociraj memoriju, prekopiraj
+    1. SYNTAX ANALYSIS (BRACKETS TBA, MAY BE EXPANDED ON LATER)
+    2. SOME SORT OF DEPENDENCY GRAPH CREATION
+    3. CYCLE CHECKING
+    4. REPORTING CYCLES IN DEPENDENCIES
+    5. TAKING CLEAN DEPENDENCIES AND 
+       SUBSTITUTING CELL NAMES WITH VALUES
+    6. EVALUATING MATH EQUATION
+*/
+
+/*
+    QUIRKS TBA:
+
+    ? COLOURS IN CELLS FOR PRETTYFYING
+    - ADD SUPPORT FOR MORE COLUMNS LIKE AA, AAA, AAAA, ...
+    ? SEPARATE FILE AND CONSOLE OUTPUT BECAUSE OF THE COLOUR CHARACTERS,
+        OR CONSOLIDATE ON NOT HAVING FILE OUTPUT, USELESS ANYWAYS
+
+*/
+
+/*
+    TODO
+
+    1. SS APPENDING : TEST, VALIDATE, FIND BUGS, SOLVE IF ANY
+
+    2. GRAPH :
+        - 1ST PASS : GO THROUGH ALL EXPRESSIONS AND EXTRACT DEPENDENCIES
+        -? ALLOCATE MEMORY FOR ALL OF THEM
+        - 2ND PASS: GO THROUGH ALL EXPRESSIONS AND ADD DEPENDENCIES AS NODES IN THE GRAPH
+            --UPDATE DEPENDENCIES ALONG THE WAY
+        
+        - 3RD PASS : ANALYZE AND DETECT CYCLES (SOME ALGO FROM PROJEKTOVANJE ALGORITAMA, LOOK 'TOPOLOGICAL SORTING', 'CYCLIC GRAPHS')
+        ...
+    ...
+*/
+
+/*
+    NOTES
+
+    1. MATH EVALUATION CAN BE DONE USING A STACK STRUCTURE, THINK OF IT
+        AS DOING THE EQUATION IN YOUR HEAD BUT WITH A PIECE OF PAPER COVERING 
+        IT AND UNVEILING ONE THING AT A TIME
+    
+    2. TEST THE NEW CHANGES TO ISOPERATOR() SINCE I DIDNT HAVE IT IN MIND WHEN DEVELOPING
+        ALGORITHM FOR THE PARSER
+
+    ...
+*/
+
+int main(int argc, char* argv[]) {
 
     if(argc < 2) {
         fprintf(stderr, "You must provide name of the input file:\n ./main <input_file>.csv\n");
@@ -341,10 +485,8 @@ int main(int argc, char* argv[]) {
     }
 
     const char* input_file_path = argv[1];
-    int len;
+    int len = 0;
     char* content = consume_file(input_file_path, &len);
-
-    //printf("%s\n", content);
 
     StringStruct input = ss_form_string(content, len);
 
@@ -353,19 +495,15 @@ int main(int argc, char* argv[]) {
 
     approx_table_size(input, &rows, &cols);
 
-    if(cols > 26) printf("ERROR: This program currently only supports up to 26 columns.\n");
+    if(cols > 26) printf("ERROR: This program only supports up to 26 columns.\n");
+    assert(cols <= 26);
 
     Table table = alloc_table(rows, cols);
 
     populate_table(&table, input);
-
-    max_cell_width += 2;
-
+    perform_syntax_analysis(&table);
     print_table(&table);
     //print_table_kind(&table);
-
-    //parse_expressions(&table);
-
 
     return 0;
 }
