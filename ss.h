@@ -427,7 +427,7 @@ bool ss_isnumber(StringStruct ss) {
 
 bool c_isoperator(char c) {
 
-    return (c == '+' || c == '-' || c == '*' || c == '/' || c == '^' || c == '=' || c == '(' || c == ')');
+    return (c == '+' || c == '-' || c == '*' || c == '/' || c == '^');
 }
 
 char c_tolower(char character) {

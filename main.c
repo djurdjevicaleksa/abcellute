@@ -8,6 +8,10 @@
 
 #define DECIMAL_PLACES 2
 #define EXTRA_CELL_SPACE 2
+#define GRAPH_NODE_BUFFER_SIZE 32 // this should be the buffe
+#define NODE_LIST_SIZE 32
+#define SYNTAX_ERRORS_BUFF_LEN 2048
+
 
 #define ANSI_RESET      "\x1b[0m"
 #define ANSI_RED        "\x1b[31m"
@@ -327,18 +331,28 @@ bool token_iscellref(StringStruct token, int* out_row, int* out_column) {
     StringStruct input = ss_trim(token);
 
     char c = *((char*)(ss_cut_n(&input, 1).data));
-    if(!c_isupper(c)) return false;
+    if(!c_isupper(c)) goto not;
 
-    if(!ss_isnumber(input)) return false;
+    if(!ss_isnumber(input)) goto not;
 
     int num = (int)ss_tod(input);
 
-    if(num < 0 || num > 999) return false;
+    if(num < 0 || num > 999) goto not;
 
     if(out_column) *out_column = (int)(c - 'A');
     if(out_row) *out_row = num;
 
     return true;
+
+    not:
+        if(out_row) {
+            *out_row = -1;
+        }
+        if(out_column) {
+            *out_column = -1;
+        }
+
+        return false;
 
 }
 
@@ -353,8 +367,153 @@ char find_first_operator(StringStruct ss) {
     return '\0';
 }
 
-void perform_syntax_analysis(Table* table) {
 
+
+/*
+    GRAPH THINGS
+*/
+
+struct Node;
+
+typedef struct Node {
+
+    int row, col;
+    struct Node** dependencies;
+    size_t count;
+} Node;
+
+typedef struct {
+
+    Node nodes[NODE_LIST_SIZE];
+    size_t count;
+} NodeList;
+
+typedef NodeList VisitedNodes;
+
+Node* make_root(int expression_count) {
+
+    Node* root = malloc(sizeof(Node));
+    assert(root != NULL);
+
+    root->row = -2;
+    root->col = -2;
+    root->dependencies = NULL;
+    root->count;
+
+    if(expression_count > 0) {
+
+        root->dependencies = malloc(sizeof(Node*) * expression_count);
+        assert(root->dependencies != NULL);
+        memset(root->dependencies, 0, sizeof(Node*) * expression_count);
+    }
+
+    return root;
+}
+
+
+
+bool was_visited(Node* root, VisitedNodes* visited) {
+
+    for(size_t i = 0; i < visited->count; i++) {
+
+        if(root->row == visited->nodes[i].row && root->col == visited->nodes[i].col) return true;
+    }
+    return false;
+}
+
+Node* dfs(Node* root, Node* target, VisitedNodes* visited) {
+
+    assert(root != NULL);
+
+    //proveri da li je vec poseceno
+    if(was_visited(root, visited)) return NULL;
+
+    if(root->col == target->col && root->row == target->row) {
+
+        //nasao ga, vrati ga
+        //printf("Ovde je poznata celija koja zavisi od nadjenog cvora\n");
+        return root;
+    }
+
+    visited->nodes[visited->count++] = *root;
+    //printf("[DFS] Visited node %c%d.\n", 'A' + root->col, root->row);
+
+    for(size_t i = 0; i < root->count; i++) {
+
+        Node* ret = dfs(root->dependencies[i], target, visited);
+
+        if(ret != NULL) return ret;
+    }
+
+    return NULL;
+}
+
+Node* find_node(Node* root, Node* target) {
+
+    //printf("[FIND] Begin:\n");
+
+    VisitedNodes visited = {0};
+
+    return dfs(root, target, &visited);
+}
+
+void add_node(Node* source, Node* target) {
+
+    Node* newNode = malloc(sizeof(Node));
+    assert(newNode != NULL);
+
+    newNode->row = target->row;
+    newNode->col = target->col;
+    newNode->count = 0;
+    newNode->dependencies = NULL;
+
+    if(source->dependencies == NULL) 
+        source->dependencies = malloc(sizeof(Node*));
+    else 
+        source->dependencies = realloc(source->dependencies, sizeof(source->dependencies) + sizeof(Node*));
+        
+    assert(source->dependencies != NULL);
+    source->dependencies[source->count++] = newNode;
+    printf("[ADD] %c%d -> %c%d.\n", 'A' + source->col, source->row, 'A' + target->col, target->row);
+}
+
+void handle_expression(Node* root, Node* values, size_t count) {
+
+    Node* source = find_node(root, &values[0]);
+
+    if(source == NULL) {
+
+        Node* newNode = malloc(sizeof(Node));
+        assert(newNode != NULL);
+        
+        newNode->row = (&values[0])->row;
+        newNode->col = (&values[0])->col;
+        newNode->count = 0;
+        newNode->dependencies = malloc(sizeof(Node*) * count - 1);
+        assert(newNode->dependencies != NULL);
+        memset(newNode->dependencies, 0, sizeof(Node*) * count - 1);
+
+        source = newNode;
+
+        root->dependencies[root->count++] = newNode;
+        printf("[ADD] Cell %c%d wasn't found so it was appended to the root.\n", 'A' + (&values[0])->col, (&values[0])->row);
+    } 
+
+    for(size_t i = 1; i < count; i++) {
+
+        add_node(source, &values[i]);
+    }
+}
+
+
+Node* perform_syntax_analysis(Table* table) {
+
+    //root uvek postoji
+    char syntax_errors[SYNTAX_ERRORS_BUFF_LEN];
+    size_t syntax_buffer_iterator = 0;
+
+    Node* root = make_root(expression_count);
+    
     for(int row = 0; row < table->rows; row++) {
 
         for(int col = 0; col < table->cols; col++) {
@@ -363,8 +522,20 @@ void perform_syntax_analysis(Table* table) {
 
             if(cell->kind == KIND_EXPR) {
 
+                //node buffer, implemented here in temporary memory to avoid having to allocate an unknown amount of spaces for
+                //cell dependencies. also wanted to avoid duplicating the entire function.
 
+                Node current_cell = {
 
+                    .row = row,
+                    .col = col,
+                    .count = 0,
+                    .dependencies = NULL
+                };
+
+                Node referenced_cells[GRAPH_NODE_BUFFER_SIZE] = {0}; 
+                size_t buffer_count = 0;
+                referenced_cells[buffer_count++] = current_cell;
 
                 StringStruct expr = cell->as.expression.expr;
                 ss_cut_n(&expr, 1); //cut the '=' sign
@@ -373,13 +544,15 @@ void perform_syntax_analysis(Table* table) {
                 if(expr.count == 0) {
 
                     cell->as.expression.kind = EXPR_INVALID;
-                    printf(ANSI_RED"[SYNTAX ERROR] Empty expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED".\n"ANSI_RESET, (char)('A' + col), row);
+                    syntax_buffer_iterator += sprintf(syntax_errors + syntax_buffer_iterator, ANSI_RED"[SYNTAX ERROR] Empty expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED".\n"ANSI_RESET, (char)('A' + col), row);
                     continue;
                 }
 
                 while(expr.count > 0) {
 
                     char c = find_first_operator(expr);
+                    int out_row = 0;
+                    int out_col = 0;
 
                     if(c != '\0') {
 
@@ -391,16 +564,34 @@ void perform_syntax_analysis(Table* table) {
                         if(expr.count == 0) { //posle cuttovanja operatora nema nista -> dangling operator
 
                             cell->as.expression.kind = EXPR_INVALID;
-                            printf(ANSI_RED"[SYNTAX ERROR] Dangling operator in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            syntax_buffer_iterator += sprintf(syntax_errors + syntax_buffer_iterator, ANSI_RED"[SYNTAX ERROR] Dangling operator in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
                             break;
                         }
 
-                        if(!token_iscellref(token, NULL, NULL) && !ss_isnumber(token)) {
+                        if(!token_iscellref(token, &out_row, &out_col) && !ss_isnumber(token)) {
 
                             cell->as.expression.kind = EXPR_INVALID;
-                            printf(ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            syntax_buffer_iterator += sprintf(syntax_errors + syntax_buffer_iterator, ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
                             break;
                         }
+
+                        if(out_col != -1 && out_row != -1) {
+
+                            //token je cellref
+                            //ovde dodaj dependency u buffer
+                            Node dep = {
+
+                                .row = out_row,
+                                .col = out_col,
+                                .count = 0,
+                                .dependencies = NULL
+                            };
+
+                            referenced_cells[buffer_count++] = dep;
+                            assert(buffer_count < GRAPH_NODE_BUFFER_SIZE); //to crash before segfault to alert the user of there being
+                                                                           //too many cell references. 
+                        }                            
+                         
 
 
                     } else {
@@ -409,21 +600,39 @@ void perform_syntax_analysis(Table* table) {
                         StringStruct token = ss_cut_n(&expr, expr.count + 1);
                         assert(expr.count == 0);
 
-                        if(!token_iscellref(token, NULL, NULL) && !ss_isnumber(token)) {
+                        if(!token_iscellref(token, &out_row, &out_col) && !ss_isnumber(token)) {
 
                             cell->as.expression.kind = EXPR_INVALID;
-                            printf(ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
+                            syntax_buffer_iterator += sprintf(syntax_errors + syntax_buffer_iterator, ANSI_RED"[SYNTAX ERROR] Invalid expression in cell "ANSI_BOLD_RED"%c%d"ANSI_RESET ANSI_RED" :\""SSFormat"\"\n" ANSI_RESET, (char)('A' + col), row, SSArg(cell->as.expression.expr));
                             break;
+                        }
+
+                        if(out_col != -1 && out_row != -1) {
+
+                            //token je cellref
+                            //ovde dodaj dependency u buffer
+                            Node dep = {
+
+                                .row = out_row,
+                                .col = out_col,
+                                .count = 0,
+                                .dependencies = NULL
+                            };
+
+                            referenced_cells[buffer_count++] = dep;
                         }
                     }
                 }
 
+                if(cell->as.expression.kind == EXPR_INVALID) continue;
 
-
+                handle_expression(root, referenced_cells, buffer_count);
 
             }
         }
     }
+
+    fprintf(stderr, "%s\n", syntax_errors);
 }
 
 /*
