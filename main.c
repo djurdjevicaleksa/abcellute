@@ -8,59 +8,68 @@
 
 #define DECIMAL_PLACES 2
 #define EXTRA_CELL_SPACE 2
-#define GRAPH_NODE_BUFFER_SIZE 32       // node buffer of one entire expression contains this many nodes
-#define NODE_LIST_SIZE 32               // node stack contains this many nodes
-#define SYNTAX_ERRORS_BUFF_LEN 2048     // buffer for printing all syntax errors
-#define GRAPH_CYCLE_BUFFER 256          // buffer for printing a dependency cycle
-#define MATH_PARSER_ELEMENT_COUNT 32    // buffer for elements of an expression being parsed and solved
+#define GRAPH_NODE_BUFFER_SIZE 32           // node buffer of one entire expression contains this many nodes
+#define NODE_LIST_SIZE 32                   // node stack contains this many nodes
+#define SYNTAX_ERRORS_BUFF_SIZE 2048         // buffer for printing all syntax errors
+#define GRAPH_CYCLE_BUFFER_SIZE 256              // buffer for printing a dependency cycle
+#define MATH_PARSER_ELEMENT_COUNT 32        // buffer for elements of an expression being parsed and solved
+#define INVALID_DEPENDENCY_BUFFER_SIZE 256  // buffer for printing invalid dependency
 
 #define ANSI_RESET      "\x1b[0m"
 #define ANSI_RED        "\x1b[31m"
 #define ANSI_GREEN      "\x1b[32m"
 #define ANSI_BOLD_RED   "\x1b[1;31m"
 
+#define push_stack(stack, node) {           \
+    assert((stack)->count < NODE_LIST_SIZE);\
+    (stack)->nodes[(stack)->count++] = node;\
+}
+
+#define pop_stack(stack) {                  \
+    assert((stack)->count > 0);             \
+    (stack)->count--;                       \
+}
+
+#define MKNode(_row, _col) {                \
+    .row = _row,                            \
+    .col = _col,                            \
+    .count = 0,                             \
+    .dependencies = NULL                    \
+}
+
 int max_cell_width = 0;
 int expression_count = 0; //for dynamic allocation of graph nodes later
 
 typedef enum {
-
     EXPR_DEFAULT = 0,
     EXPR_VALID,
     EXPR_INVALID
 } ExprKind;
 
 typedef struct {
-
     ExprKind kind;
     StringStruct expr;
 } Expr;
 
 typedef enum {
-
     KIND_EMPTY = 0,
     KIND_TEXT,
     KIND_NUM,
     KIND_EXPR
-
 } CellKind;
 
 typedef union {
-
     StringStruct text;
     double number;
     Expr expression;
-
 } Cell_as;
 
 typedef struct {
-
     CellKind kind;
     Cell_as as;
-
 } Cell;
 
 typedef struct {
-
     Cell* cells;
     int rows;
     int cols;
@@ -220,7 +229,13 @@ void print_cell_kind(Cell* cell) {
 
         case KIND_EXPR: {
 
-            printf("%*s|", 5, "EXPR");
+            if(cell->as.expression.kind == EXPR_DEFAULT)
+                printf("%*s|", 5, "EXPR");
+            else if(cell->as.expression.kind == EXPR_VALID)
+                printf("%*s|", 5, "EXPR+");
+            else
+                printf("%*s|", 5, "EXPR-");
+            
             return;
         }
         
@@ -404,14 +419,12 @@ char find_first_operator(StringStruct ss) {
 struct Node;
 
 typedef struct Node {
-
     int row, col;
     struct Node** dependencies;
     size_t count;
 } Node;
 
 typedef struct {
-
     Node* nodes[NODE_LIST_SIZE];
     size_t count;
 } NodeList;
@@ -445,19 +458,6 @@ bool was_visited(Node* root, VisitedNodes* visited) {
         if(visited->nodes[i] == root) return true;
     }
     return false;
-}
-
-void push_stack(VisitedNodes* stack, Node* node) {
-
-    assert(node != NULL);
-    assert(stack->count < NODE_LIST_SIZE);
-    stack->nodes[stack->count++] = node;    
-}
-
-void pop_stack(VisitedNodes* stack) {
-
-    assert(stack->count > 0);
-    stack->count--;
 }
 
 Node* dfs(Node* root, Node* target, VisitedNodes* visited) {
@@ -550,18 +550,10 @@ void handle_expression(Node* root, Node* values, size_t count) {
     }
 }
 
-#define MKNode(_row, _col) {                     \
-                        .row = _row,             \
-                        .col = _col,             \
-                        .count = 0,              \
-                        .dependencies = NULL     \
-                    };
-
-
 Node* perform_syntax_analysis(Table* table) {
 
     //root uvek postoji
-    char syntax_errors[SYNTAX_ERRORS_BUFF_LEN];
+    char syntax_errors[SYNTAX_ERRORS_BUFF_SIZE];
     size_t syntax_buffer_iterator = 0;
     memset(syntax_errors, '\0', sizeof(syntax_errors));
 
@@ -579,6 +571,7 @@ Node* perform_syntax_analysis(Table* table) {
                 //cell dependencies. also wanted to avoid duplicating the entire function.
 
                 Node current_cell = MKNode(row, col);
+                cell->as.expression.kind = EXPR_VALID; //invalidated during processing if its invalid
 
                 Node referenced_cells[GRAPH_NODE_BUFFER_SIZE] = {0}; 
                 size_t buffer_count = 0;
@@ -736,19 +729,13 @@ bool dfs_cycle(Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
 
 void report_cycle(VisitedNodes* recstack) {
 
-    char buffer[GRAPH_CYCLE_BUFFER];
+    char buffer[GRAPH_CYCLE_BUFFER_SIZE];
     memset(buffer, '\0', sizeof(buffer));
     size_t buffer_iterator = 0;
                 
     buffer_iterator += sprintf(buffer + buffer_iterator, ANSI_RED "[CYCLE CHECK] A dependency cycle was found:\n" ANSI_RESET);
 
-    Node lastNode = *recstack->nodes[recstack->count - 1];
-    size_t node_iterator = 0;
-    Node firstNode = *recstack->nodes[node_iterator];
-
-    while(firstNode.row != lastNode.row || firstNode.col != lastNode.col) firstNode = *recstack->nodes[node_iterator++];
-
-    for(size_t i = node_iterator - 1; i < recstack->count - 1; i++) {
+    for(size_t i = 0; i < recstack->count - 1; i++) {
 
         buffer_iterator += sprintf(buffer + buffer_iterator, "%c%d -> ", 'A' + recstack->nodes[i]->col, recstack->nodes[i]->row);
     }
@@ -815,37 +802,164 @@ void push_element(ElementStack* stack, Element element) {
 
 void solve_expression(Table* table, Node* node) {
 
+    Cell* target_cell = cell_at(table, node->row, node->col);
+    assert(target_cell != NULL);
 
-
+    StringStruct rawExpr = target_cell->as.expression.expr;
+    printf("EXPRESSION: " SSFormat"\n", SSArg(rawExpr));
 }
 
-void dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
+bool dfs_solve(Table* table, Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
 
     assert(root != NULL);
 
     push_stack(visited, root);
+    push_stack(recstack, root);
+    assert(0 && "pop stack");
+
+    //a cell can depend on a node thats either an expression or a number
+
+    Cell* target_cell = cell_at(table, root->row, root->col);
+    assert(target_cell != NULL);
+
+    switch(target_cell->kind) {
+
+        case KIND_NUM: break;
+
+        case KIND_EXPR: {
+
+            if(target_cell->as.expression.kind == EXPR_INVALID) { //report cells who cant depend on an invalid cell
+
+                
+            }
+            else break;
+        }
+
+        case KIND_TEXT: { //report that cells cant depend on a cell which is a string
+
+
+        }
+
+        case KIND_EMPTY: { //report that cells cant depend on an empty cell
+
+
+        }
+    }
 
     for(size_t i = 0; i < root->count; i++) {
 
         if(!was_visited(root->dependencies[i], visited)) {
 
-            dfs_solve(table, root->dependencies[i], visited);
+            dfs_solve(table, root->dependencies[i], visited, recstack);
         }
     }
 
     solve_expression(table, root);
 }
 
-void solve_expressions(Table* table, Node* root) {
+/*void solve_expressions(Table* table, Node* root) {
 
     VisitedNodes visited = {0};
+    VisitedNodes recstack = {0};
 
     for(size_t i = 0; i < root->count; i++) {
 
-        if(!was_visited(root->dependencies[i], &visited)) dfs_solve(table, root->dependencies[i], &visited);
+        if(!was_visited(root->dependencies[i], &visited)) {
+
+            if(dfs_solve(table, root->dependencies[i], &visited, &recstack))
+        }
     }
+}*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+//void report_invalid_dependency()
+
+bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
+
+    assert(root != NULL);
+
+    push_stack(visited, root);
+    push_stack(recstack, root);
+
+    //check if current node is valid
+    Cell* target_cell = cell_at(table, root->row, root->col);
+    assert(target_cell != NULL);
+
+    switch(target_cell->kind) {
+
+        case KIND_NUM: break;
+
+        case KIND_EXPR: {
+
+            if(target_cell->as.expression.kind == EXPR_INVALID) { //report cells who cant depend on an invalid cell
+                return true;
+                fprintf(stderr, "INVALID!!!");
+                char buffer[INVALID_DEPENDENCY_BUFFER_SIZE];
+                memset(buffer, '\0', sizeof(buffer));
+                size_t iterator = 0;
+
+                iterator += sprintf(buffer + iterator, "[DEPCHK] Expressions depend on an invalid cell.\n");
+                for(size_t i = 0; i < recstack->count - 1; i++) {
+
+                    iterator += sprintf(buffer + iterator, "%c%d -> ", 'A' + recstack->nodes[i]->col, recstack->nodes[i]->row);
+                }
+                sprintf(buffer + iterator, "( %c%d = '"SSFormat"')\n",
+                'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row, SSArg(target_cell->as.expression.expr));
+                printf("%s", buffer);
+
+                return true;
+            }
+            
+            break;
+        }
+
+        case KIND_TEXT: { //report that cells cant depend on a cell which is a string
+
+            return true;
+            break;
+        }
+
+        case KIND_EMPTY: { //report that cells cant depend on an empty cell
+
+            return true;
+            break;
+        }
+    }
+
+    pop_stack(recstack);
+    return false;
 }
 
+
+bool invalid_dependencies_exist(Table* table, Node* root) {
+
+    VisitedNodes visited = {0};
+    VisitedNodes recstack = {0};
+
+    for(size_t i = 0; i < root->count; i++) {
+
+        if(!was_visited(root->dependencies[i], &visited)) {
+
+            if(dfs_invalid_dependency(table, root->dependencies[i], &visited, &recstack)) {
+                
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
 
 void solve_table(Table* table) {
 
@@ -863,9 +977,18 @@ void solve_table(Table* table) {
         return;
     }
 
+    if(invalid_dependencies_exist(table, root)) {
+
+        printf(ANSI_BOLD_RED"\n[SOLVE] Terminated abnormally.\n" ANSI_RESET);
+        return;
+    }
+
+
+
+
     printf(ANSI_GREEN "\n[SOLVE] Solving..." ANSI_RESET"\n");
 
-    solve_expressions(table, root);
+    //solve_expressions(table, root);
 }
 
 /*
@@ -931,6 +1054,7 @@ int main(int argc, char* argv[]) {
     solve_table(&table);
     
     print_table(&table);
+    print_table_kind(&table);
 
 
     return 0;
