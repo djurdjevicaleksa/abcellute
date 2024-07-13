@@ -12,8 +12,8 @@
 #define NODE_LIST_SIZE 32                   // node stack contains this many nodes
 #define SYNTAX_ERRORS_BUFF_SIZE 2048         // buffer for printing all syntax errors
 #define GRAPH_CYCLE_BUFFER_SIZE 256              // buffer for printing a dependency cycle
-#define MATH_PARSER_ELEMENT_COUNT 32        // buffer for elements of an expression being parsed and solved
 #define INVALID_DEPENDENCY_BUFFER_SIZE 256  // buffer for printing invalid dependency
+#define EQUATION_TOKENS                 16
 
 #define ANSI_RESET      "\x1b[0m"
 #define ANSI_RED        "\x1b[31m"
@@ -35,6 +35,14 @@
     .col = _col,                            \
     .count = 0,                             \
     .dependencies = NULL                    \
+}
+
+#define EQ_INIT {       \
+    .n_first = 0,       \
+    .n_second = 0,      \
+    .n_third = 0,       \
+    .o_first = '\0',    \
+    .o_second = '\0'    \
 }
 
 int max_cell_width = 0;
@@ -270,7 +278,10 @@ void populate_table(Table* table, StringStruct input) {
             } else {
 
                 cell_at(table, rows, cols)->as.text = token;
-                cell_at(table, rows, cols)->kind = KIND_TEXT;
+                if(token.count == 0)
+                    cell_at(table, rows, cols)->kind = KIND_EMPTY;
+                else
+                    cell_at(table, rows, cols)->kind = KIND_TEXT;
             }
         }
     }
@@ -430,6 +441,7 @@ typedef struct {
 } NodeList;
 
 typedef NodeList VisitedNodes;
+typedef NodeList Recstack;
 
 Node* make_root(int expression_count) {
 
@@ -703,7 +715,7 @@ Node* perform_syntax_analysis(Table* table) {
     return root;
 }
 
-bool dfs_cycle(Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
+bool dfs_cycle(Node* root, VisitedNodes* visited, Recstack* recstack) {
 
     assert(root != NULL);
 
@@ -727,7 +739,7 @@ bool dfs_cycle(Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
     return false;
 }
 
-void report_cycle(VisitedNodes* recstack) {
+void report_cycle(Recstack* recstack) {
 
     char buffer[GRAPH_CYCLE_BUFFER_SIZE];
     memset(buffer, '\0', sizeof(buffer));
@@ -748,7 +760,7 @@ void report_cycle(VisitedNodes* recstack) {
 bool cycles_exist(Node* root) {
 
     VisitedNodes visited = {0};
-    VisitedNodes recstack = {0};
+    Recstack recstack = {0};
 
     for(size_t i = 0; i < root->count; i++) {
 
@@ -770,17 +782,22 @@ bool cycles_exist(Node* root) {
     MATH PARSING
 */
 
+
+
+
+/*
+    SHUNTING YARD ALGORITHM
+*/
+
 typedef union {
     double number;
-    Cell* cell;
     char operator;
 } ElementAs;
 
 typedef enum {
-
-    ELEMENT_NUMBER = 0,
-    ELEMENT_CELL_REF,
-    ELEMENT_OPERATOR
+    ELEMENT_NUM = 0,
+    ELEMENT_OP,
+    ELEMENT_INV
 } ElementKind;
 
 typedef struct {
@@ -788,88 +805,165 @@ typedef struct {
     ElementAs as;
 } Element;
 
+#define INVALID_ELEMENT {   \
+    .kind = ELEMENT_INV     \
+}
+
+#define PRINT_ELEMENT(element) {\
+if((element).kind == ELEMENT_NUM) printf("Element: %f\n", (element).as.number);\
+else printf("Element: %c\n", (element).as.operator);}
+
+
+#define ELEMENT_STACK_SIZE 16
+
+#define STACK_INIT {        \
+    .elements = {0},        \
+    .count = 0              \
+}
+
 typedef struct {
-
-    Element elements[MATH_PARSER_ELEMENT_COUNT];
+    Element elements[ELEMENT_STACK_SIZE];
     size_t count;
-
 } ElementStack;
 
-void push_element(ElementStack* stack, Element element) {
+void stack_push(ElementStack* stack, Element element) {
 
+    assert(stack->count < ELEMENT_STACK_SIZE);
     stack->elements[stack->count++] = element;
 }
 
-void solve_expression(Table* table, Node* node) {
+Element stack_pop(ElementStack* stack) {
+
+    if(stack->count > 0) {
+        
+        Element ret = stack->elements[stack->count--];
+        return ret;
+    }
+
+    Element inv = INVALID_ELEMENT;
+    return inv;
+}
+
+#define ELEMENT_QUEUE_SIZE 32
+#define QUEUE_INIT {        \
+    .elements = {0},        \
+    .first = 0,             \
+    .last = 0,              \
+}
+
+typedef struct {
+    Element elements[ELEMENT_QUEUE_SIZE];
+    size_t first;
+    size_t last;
+} ElementQueue;
+
+void queue_push(ElementQueue* queue, Element element) {
+
+    assert(queue->last < ELEMENT_QUEUE_SIZE);
+    queue->elements[queue->last++] = element;
+}
+
+Element queue_pop(ElementQueue* queue) {
+
+    if(queue->last - queue->first != 0) {
+
+        queue->first++;
+        return queue->elements[queue->first - 1];
+    }
+    
+    Element inv = INVALID_ELEMENT;
+    return inv;
+}
+
+void solve_equation_with_numbers(Table* table, Node* node) {
+
+    assert(table != NULL && node != NULL);
 
     Cell* target_cell = cell_at(table, node->row, node->col);
     assert(target_cell != NULL);
 
-    StringStruct rawExpr = target_cell->as.expression.expr;
-    printf("EXPRESSION: " SSFormat"\n", SSArg(rawExpr));
+    StringStruct e = target_cell->as.expression.expr;
+    ss_cut_n(&e, 1); //strip off the '=' sign
+    e = ss_trim(e);
+
+    //vrti sve dok ima operatora
+
+    //     5 / 9 - 6 * 7 / 2 + 8
+    // 5 / 9
+    //5
+
+    ElementStack stack = {0};
+
+
+
+    //shunting_yard()
+
+    
+    
+
+    //now theres only 1 number in the SS
+
 }
 
-bool dfs_solve(Table* table, Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
+float solve_expression(Table* table, Node* node) {
+
+    Cell* target_cell = cell_at(table, node->row, node->col);
+    assert(target_cell != NULL);
+
+    assert(target_cell->kind != KIND_TEXT);
+    assert(target_cell->kind != KIND_EMPTY);
+
+    switch(target_cell->kind) { //poslednji u lancu moze biti ILI NUM ILI EXPRESSION SA BROJEVIMA
+
+        case KIND_NUM: {
+
+            break;
+        }
+
+        case KIND_EXPR: {
+
+            solve_equation_with_numbers(table, node);
+            break;
+        }
+
+        default: {
+
+            assert(0 && "Unreachable code.");
+        }
+    }
+}
+
+void dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
 
     assert(root != NULL);
 
     push_stack(visited, root);
-    push_stack(recstack, root);
-    assert(0 && "pop stack");
 
     //a cell can depend on a node thats either an expression or a number
-
-    Cell* target_cell = cell_at(table, root->row, root->col);
-    assert(target_cell != NULL);
-
-    switch(target_cell->kind) {
-
-        case KIND_NUM: break;
-
-        case KIND_EXPR: {
-
-            if(target_cell->as.expression.kind == EXPR_INVALID) { //report cells who cant depend on an invalid cell
-
-                
-            }
-            else break;
-        }
-
-        case KIND_TEXT: { //report that cells cant depend on a cell which is a string
-
-
-        }
-
-        case KIND_EMPTY: { //report that cells cant depend on an empty cell
-
-
-        }
-    }
 
     for(size_t i = 0; i < root->count; i++) {
 
         if(!was_visited(root->dependencies[i], visited)) {
 
-            dfs_solve(table, root->dependencies[i], visited, recstack);
+            dfs_solve(table, root->dependencies[i], visited);
         }
     }
 
     solve_expression(table, root);
 }
 
-/*void solve_expressions(Table* table, Node* root) {
+void solve_expressions(Table* table, Node* root) {
 
     VisitedNodes visited = {0};
-    VisitedNodes recstack = {0};
 
     for(size_t i = 0; i < root->count; i++) {
 
         if(!was_visited(root->dependencies[i], &visited)) {
 
-            if(dfs_solve(table, root->dependencies[i], &visited, &recstack))
+            dfs_solve(table, root->dependencies[i], &visited);
         }
     }
-}*/
+}
 
 
 
@@ -878,14 +972,51 @@ bool dfs_solve(Table* table, Node* root, VisitedNodes* visited, VisitedNodes* re
 
 
 
+void report_invalid_dependency(Recstack* recstack, Cell* target_cell, const char* err_message) {
 
+    char buffer[INVALID_DEPENDENCY_BUFFER_SIZE];
+    memset(buffer, '\0', sizeof(buffer));
+    size_t iterator = 0;
 
+    iterator += sprintf(buffer + iterator, ANSI_RED "%s" ANSI_RESET, err_message);
+    for(size_t i = 0; i < recstack->count - 1; i++) {
 
+        iterator += sprintf(buffer + iterator, "%c%d -> ", 'A' + recstack->nodes[i]->col, recstack->nodes[i]->row);
+    }
 
+    switch(target_cell->kind) {
 
-//void report_invalid_dependency()
+        case KIND_EXPR: {
 
-bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, VisitedNodes* recstack) {
+            sprintf(buffer + iterator, "( %c%d = '"SSFormat"')\n",
+            'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row, SSArg(target_cell->as.expression.expr));
+            break;
+        }
+
+        case KIND_TEXT: {
+
+            sprintf(buffer + iterator, "( %c%d = '"SSFormat"')\n",
+            'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row, SSArg(target_cell->as.text));
+            break;
+        }
+
+        case KIND_EMPTY: {
+
+            sprintf(buffer + iterator, "( %c%d = '"SSFormat"')\n",
+            'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row, SSArg(target_cell->as.text));
+            break;
+        }
+
+        default: {
+
+            assert(0 && "Unreachable code.");
+        }
+    }
+    
+    printf("%s", buffer);
+}
+
+bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, Recstack* recstack) {
 
     assert(root != NULL);
 
@@ -898,26 +1029,16 @@ bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, Vis
 
     switch(target_cell->kind) {
 
-        case KIND_NUM: break;
+        case KIND_NUM: {
+            
+            break;
+        }
 
         case KIND_EXPR: {
 
             if(target_cell->as.expression.kind == EXPR_INVALID) { //report cells who cant depend on an invalid cell
-                return true;
-                fprintf(stderr, "INVALID!!!");
-                char buffer[INVALID_DEPENDENCY_BUFFER_SIZE];
-                memset(buffer, '\0', sizeof(buffer));
-                size_t iterator = 0;
 
-                iterator += sprintf(buffer + iterator, "[DEPCHK] Expressions depend on an invalid cell.\n");
-                for(size_t i = 0; i < recstack->count - 1; i++) {
-
-                    iterator += sprintf(buffer + iterator, "%c%d -> ", 'A' + recstack->nodes[i]->col, recstack->nodes[i]->row);
-                }
-                sprintf(buffer + iterator, "( %c%d = '"SSFormat"')\n",
-                'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row, SSArg(target_cell->as.expression.expr));
-                printf("%s", buffer);
-
+                report_invalid_dependency(recstack, target_cell, "[DEPCHK] Expressions depend on an invalid expression cell.\n");
                 return true;
             }
             
@@ -926,26 +1047,35 @@ bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, Vis
 
         case KIND_TEXT: { //report that cells cant depend on a cell which is a string
 
+            report_invalid_dependency(recstack, target_cell, "[DEPCHK] Expressions depend on a text cell.\n");
             return true;
-            break;
         }
 
         case KIND_EMPTY: { //report that cells cant depend on an empty cell
 
+            report_invalid_dependency(recstack, target_cell, "[DEPCHK] Expressions depend on an empty cell.\n");
             return true;
-            break;
         }
+
+        default: {
+
+            assert(0 && "Unreachable code.");
+        }
+    }
+
+    for(size_t i = 0; i < root->count; i++) {
+
+        if(dfs_invalid_dependency(table, root->dependencies[i], visited, recstack)) return true;
     }
 
     pop_stack(recstack);
     return false;
 }
 
-
 bool invalid_dependencies_exist(Table* table, Node* root) {
 
     VisitedNodes visited = {0};
-    VisitedNodes recstack = {0};
+    Recstack recstack = {0};
 
     for(size_t i = 0; i < root->count; i++) {
 
@@ -988,7 +1118,7 @@ void solve_table(Table* table) {
 
     printf(ANSI_GREEN "\n[SOLVE] Solving..." ANSI_RESET"\n");
 
-    //solve_expressions(table, root);
+    solve_expressions(table, root);
 }
 
 /*
@@ -1054,7 +1184,36 @@ int main(int argc, char* argv[]) {
     solve_table(&table);
     
     print_table(&table);
-    print_table_kind(&table);
+    //print_table_kind(&table);
+
+    Element e1 = {
+        .kind = ELEMENT_NUM,
+        .as.number = 5
+    };
+    Element e2 = {
+        .kind = ELEMENT_NUM,
+        .as.number = 6
+    };
+    Element e3 = {
+        .kind = ELEMENT_NUM,
+        .as.number = 10
+    };
+    Element e4 = {
+        .kind = ELEMENT_NUM,
+        .as.number = 8
+    };
+    
+    ElementStack stack = STACK_INIT;
+    stack_push(&stack, e1);
+    stack_push(&stack, e2);
+    stack_push(&stack, e3);
+    stack_push(&stack, e4);
+
+    PRINT_ELEMENT(stack_pop(&stack));
+    PRINT_ELEMENT(stack_pop(&stack));
+    PRINT_ELEMENT(stack_pop(&stack));
+    PRINT_ELEMENT(stack_pop(&stack));
+    printf("%d", sizeof(Element));
 
 
     return 0;

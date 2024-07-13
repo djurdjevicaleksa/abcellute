@@ -91,6 +91,13 @@ StringStruct ss_trim(StringStruct ss);
 StringStruct ss_cut_by_delim(StringStruct* ss, const char delimiter); 
 
 /*
+    Cuts characters from the beginning to where it finds the first occurence of the delimiter without cutting the delimiter itself. Modifies input SS and returns cut part.
+    @param ss Input SS.
+    @param delimiter The separator
+    @return Cut off part of the SS.
+*/
+StringStruct ss_cut_to_delim(StringStruct* ss, const char delimiter); 
+/*
     Copies characters from the beginning to where it finds the first occurrence of the delimiter. Doesn't modify input SS and returns the copy.
 
     @param ss Input SS.
@@ -293,26 +300,47 @@ StringStruct ss_trim(StringStruct string) {
     return ss_trim_left(ss_trim_right(string));
 }
 
-StringStruct ss_cut_by_delim(StringStruct* string, const char delimiter) {
+StringStruct ss_cut_by_delim(StringStruct* ss, const char delimiter) {
 
     size_t i = 0;
-    while(i < string->count && *(string->data + i) != delimiter) i++; 
+    while(i < ss->count && *(ss->data + i) != delimiter) i++; 
     
-    StringStruct ret = ss_form_string(string->data, i);
+    StringStruct ret = ss_form_string(ss->data, i);
 
-    if(i == string->count) {
+    if(i == ss->count) {
 
-        string->data += i - 1;
-        string->count = 0;
+        ss->data += i - 1;
+        ss->count = 0;
 
         return ret;
     }
 
-    string->data += i + 1;
-    string->count -= i + 1;
+    ss->data += i + 1;
+    ss->count -= i + 1;
 
     return ret;
-} 
+}
+
+StringStruct ss_cut_to_delim(StringStruct* ss, const char delimiter) {
+
+    size_t i = 0;
+    while(i < ss->count && *(ss->data + i) != delimiter) i++; 
+    
+    StringStruct ret = ss_form_string(ss->data, i);
+
+    if(i == ss->count) {
+
+        ss->data += i - 1;
+        ss->count = 0;
+
+        return ret;
+    }
+
+    ss->data += i;
+    ss->count -= i;
+
+    return ret;
+}
 
 StringStruct ss_copy_by_delim(StringStruct string, const char delimiter) {
 
