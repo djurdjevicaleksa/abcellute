@@ -1,4 +1,4 @@
-# MS Excel batch program
+# Abcellute, the abcellutely worst Excel clone
 
 # Usage
 
