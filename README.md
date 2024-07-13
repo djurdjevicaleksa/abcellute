@@ -20,19 +20,19 @@ Optionally, change input file name inside run.sh:
 * Automatically resizes to accommodate up to 26 columns and 999 rows if memory allows
 * Columns are separated using `|` character
 * Syntax analysis for expressions
-* Reports syntax errors
+* Lexical analysis for expressions
+* Dependency cycle detection
+* Invalid dependency detection
+* Thorough and precise error logging
 
 ## TBA
-* Lexical analysis and dependency cycle detection
-* Expression parsing
+* Expression solving using shunting yard algorithm
 * Colouring in the cells
-* Better memory handling
-* Copying one cell to another
 * ...
 
 
-## Planned expressions
-TBA.
+## Allowed expressions
+* ...
 
 # Uses
 This program uses [StringStruct](https://github.com/djurdjevicaleksa/ss) to handle string stuff.
