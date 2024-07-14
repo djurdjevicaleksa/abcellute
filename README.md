@@ -33,7 +33,8 @@ $   ./main <input.csv>
 
 ## Allowed expressions
 Every expression must start with a `=` sign. Other than that, you can do basically anyting involving numbers and cell references(A0, J17...).
-Brackets are not implemented. Allowed operations are +, -, *, / and ^. Supports negative numbers.
+Valid cell references are `A10`, `J57`, `B999`. Invalid cell references look like `A 10`, `J   5  7`, `B1000`.
+Brackets are not implemented. Allowed operations are `+`, `-`, `*`, `/` and `^`. Supports negative numbers. (`A8 * - A6`).
 
 ## Colours
 To colour in a cell, type `#` and then uppercase name of the colour. Supported colours are WHITE, BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA and CYAN.
