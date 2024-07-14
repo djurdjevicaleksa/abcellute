@@ -7,7 +7,7 @@
 #define _SS_IMPLEMENT
 #include "ss.h"
 
-#define DECIMAL_PLACES 2
+#define DECIMAL_PLACES 3
 #define EXTRA_CELL_SPACE 2
 #define GRAPH_NODE_BUFFER_SIZE 32           // node buffer of one entire expression contains this many nodes
 #define NODE_LIST_SIZE 32                   // node stack contains this many nodes
@@ -166,6 +166,36 @@ Cell* cell_at(Table* table, int row, int col) {
 
     if(row > table->rows || col > table->cols) return NULL;
     return &table->cells[row * table->cols + col];
+}
+
+void calculate_new_cell_width(Table* table) {
+
+    int new_cell_width = 0;
+
+    for(size_t row = 0; row < table->rows; row++) {
+
+        for(size_t col = 0; col < table->cols; col++) {
+
+            Cell* current_cell = cell_at(table, row, col);
+            if(current_cell->kind == KIND_TEXT) {
+
+                if(new_cell_width < current_cell->as.text.count) new_cell_width = current_cell->as.text.count; 
+            }
+            else if(current_cell->kind == KIND_NUM) {
+
+                char buffer[32];
+                sprintf(buffer, "%.*lf", DECIMAL_PLACES, current_cell->as.number);
+                if(new_cell_width < strlen(buffer)) new_cell_width = strlen(buffer);
+            }
+            else if(current_cell->kind == KIND_EXPR) {
+
+                if(new_cell_width < current_cell->as.expression.expr.count) new_cell_width = current_cell->as.expression.expr.count;
+            }
+        }
+    }
+
+    new_cell_width += 2;
+    max_cell_width = new_cell_width;   
 }
 
 void print_cell(Cell* cell) {
@@ -1395,43 +1425,14 @@ void solve_table(Table* table) {
     printf(ANSI_GREEN "\n[SOLVE] Solving..." ANSI_RESET"\n");
 
     solve_expressions(table, root);
+
+    calculate_new_cell_width(table);
+
+    print_table(table);
 }
 
-/*
-    EXPRESSION EVALUATION STEPS:
 
-    1. [DONE]   SYNTAX ANALYSIS (BRACKETS TBA, MAY BE EXPANDED ON LATER)
-    2. [DONE]   SOME SORT OF DEPENDENCY GRAPH CREATION
-    3. [DONE]   CYCLE CHECKING
-    4. [DONE]   REPORTING CYCLES IN DEPENDENCIES
-    5.          TAKING CLEAN DEPENDENCIES AND SUBSTITUTING CELL NAMES WITH VALUES
-    6.          EVALUATING MATH EQUATION
-*/
 
-/*
-    QUIRKS TBA:
-
-    ? COLOURS IN CELLS FOR PRETTYFYING
-    - ADD SUPPORT FOR MORE COLUMNS LIKE AA, AAA, AAAA, ...
-    ? SEPARATE FILE AND CONSOLE OUTPUT BECAUSE OF THE COLOUR CHARACTERS,
-        OR CONSOLIDATE ON NOT HAVING FILE OUTPUT, USELESS ANYWAYS
-
-*/
-
-/*
-    TODO
-
-    
-*/
-
-/*
-    NOTES
-
-    1. MATH EVALUATION CAN BE DONE USING A STACK STRUCTURE, THINK OF IT
-        AS DOING THE EQUATION IN YOUR HEAD BUT WITH A PIECE OF PAPER COVERING 
-        IT AND UNVEILING ONE THING AT A TIME
-    ...
-*/
 
 int main(int argc, char* argv[]) {
 
@@ -1457,18 +1458,8 @@ int main(int argc, char* argv[]) {
     Table table = alloc_table(rows, cols);
 
     populate_table(&table, input);
-    solve_table(&table);
-    
     print_table(&table);
-    print_table_kind(&table);
-
-    /*StringStruct source = SS("aleksa");
-    StringStruct target = SS("k");
-    double with = 50;
-
-    StringStruct a = d_find_and_replace(source, target, with);
-    printf(SSFormat, SSArg(a));*/
-
+    solve_table(&table);
    
     return 0;
 }
