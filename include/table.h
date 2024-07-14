@@ -18,13 +18,15 @@ typedef enum {
     KIND_EMPTY = 0,
     KIND_TEXT,
     KIND_NUM,
-    KIND_EXPR
+    KIND_EXPR,
+    KIND_COLOUR
 } CellKind;
 
 typedef union {
     StringStruct text;
     double number;
     Expr expression;
+    StringStruct colour;
 } Cell_as;
 
 typedef struct {

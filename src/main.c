@@ -71,6 +71,8 @@ int main(int argc, char* argv[]) {
     populate_table(&table, input);
     print_table(&table);
     solve_table(&table);
+    print_table_kind(&table);
+
    
     return 0;
 }

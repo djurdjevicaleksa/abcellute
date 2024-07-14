@@ -41,6 +41,13 @@ void report_invalid_dependency(Recstack* recstack, Cell* target_cell, const char
             break;
         }
 
+        case KIND_COLOUR: {
+
+            sprintf(buffer + iterator, "( %c%d, which is a COLOUR)\n",
+            'A' + recstack->nodes[recstack->count - 1]->col, recstack->nodes[recstack->count - 1]->row);
+            break;
+        }
+
         default: {
 
             assert(0 && "Unreachable code.");
@@ -88,6 +95,12 @@ bool dfs_invalid_dependency(Table* table, Node* root, VisitedNodes* visited, Rec
         case KIND_EMPTY: { //report that cells cant depend on an empty cell
 
             report_invalid_dependency(recstack, target_cell, "[DEPCHK] Expressions depend on an empty cell.\n");
+            return true;
+        }
+
+        case KIND_COLOUR: {
+
+            report_invalid_dependency(recstack, target_cell, "[DEPCHK] Expressions depend on a coloured cell.\n");
             return true;
         }
 

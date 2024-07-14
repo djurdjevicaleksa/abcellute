@@ -162,6 +162,15 @@ void print_cell(Cell* cell) {
             return;
         }
 
+        case KIND_COLOUR: {
+            
+            printf(SSFormat, SSArg(cell->as.colour));
+            for(int i = 0; i < max_cell_width; i++) printf("%s", "\u2588");
+            printf(ANSI_RESET"|");
+
+            break;
+        }
+
         default: {
 
             assert(0 && "You did the undoable. Great job!");
@@ -202,12 +211,67 @@ void print_cell_kind(Cell* cell) {
             
             return;
         }
+
+        case KIND_COLOUR: {
+
+            printf("%*s|", 5, "COL");
+            break;
+        }
         
         default: {
 
             assert(0 && "unreachable code.");
         }
     }
+}
+
+bool is_colour(StringStruct token_copy, StringStruct* out_colour) {
+
+    if(!ss_starts_with(&token_copy, '#')) return false;
+
+    ss_cut_n(&token_copy, 1);
+
+    if(ss_cmp_cstr(&token_copy, "RED")) {
+
+        *out_colour = SS(ANSI_RED);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "GREEN")) {
+
+        *out_colour = SS(ANSI_GREEN);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "YELLOW")) {
+
+        *out_colour = SS(ANSI_YELLOW);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "BLUE")) {
+
+        *out_colour = SS(ANSI_BLUE);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "MAGENTA")) {
+
+        *out_colour = SS(ANSI_MAGENTA);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "CYAN")) {
+
+        *out_colour = SS(ANSI_CYAN);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "BLACK")) {
+
+        *out_colour = SS(ANSI_BLACK);
+        return true;
+    }
+    else if(ss_cmp_cstr(&token_copy, "WHITE")) {
+
+        *out_colour = SS(ANSI_WHITE);
+        return true;
+    }
+    else return false;
 }
 
 void populate_table(Table* table, StringStruct input) {
@@ -219,9 +283,16 @@ void populate_table(Table* table, StringStruct input) {
         for(int cols = 0; line.count > 0; cols++) {
 
             StringStruct token = ss_trim(ss_cut_by_delim(&line, '|'));
-            if(token.count > max_cell_width) max_cell_width = token.count;
+            StringStruct colour = SS("");
 
-            if(ss_starts_with(&token, '=')) {
+            if(is_colour(token, &colour)) {
+
+                cell_at(table, rows, cols)->kind = KIND_COLOUR;
+                cell_at(table, rows, cols)->as.colour = colour;
+            }
+            else if(ss_starts_with(&token, '=')) {
+
+                if(token.count > max_cell_width) max_cell_width = token.count;
 
                 cell_at(table, rows, cols)->as.expression.expr = token;
                 cell_at(table, rows, cols)->as.expression.kind = EXPR_DEFAULT;
@@ -229,9 +300,13 @@ void populate_table(Table* table, StringStruct input) {
                 expression_count++;
             } else if(ss_isnumber(token)) {
 
+                if(token.count > max_cell_width) max_cell_width = token.count;
+
                 cell_at(table, rows, cols)->as.number = ss_tod(token);
                 cell_at(table, rows, cols)->kind = KIND_NUM;
             } else {
+
+                if(token.count > max_cell_width) max_cell_width = token.count;
 
                 cell_at(table, rows, cols)->as.text = token;
                 if(token.count == 0)
