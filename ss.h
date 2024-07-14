@@ -131,6 +131,11 @@ StringStruct ss_copy_n(StringStruct ss, size_t n);
 StringStruct ss_append(StringStruct base, StringStruct addition);
 
 /*
+    Replaces all occurences of `replace_this` with `with_this`. Returned SS must be freed manualy as this is a heavy and temporary function.
+*/
+StringStruct ss_find_and_replace(StringStruct base, StringStruct replace_this, StringStruct with_this);
+
+/*
     Figures out if the character is a digit (0 - 9).
 
 */
@@ -231,6 +236,11 @@ bool ss_cmp_cstr(StringStruct* ss, const char* cstr);
     @return Returns -1 if the SS doesn't contain specified character, otherwise its index.
 */
 int c_find(StringStruct* ss, char character);
+
+/*
+    Finds the first index of substring `target` in `source`.
+*/
+int ss_find_substring(StringStruct source, StringStruct target);
 
 /*
     Finds the character at the specified index.
@@ -398,6 +408,122 @@ StringStruct ss_append(StringStruct base, StringStruct addition) {
     return ss_form_string_nt(buffer);
 }
 
+int c_find_substring(char* source, char* target) {
+
+    if(strlen(target) > strlen(source)) return -1;
+
+    for(size_t i = 0; i <= strlen(source) - strlen(target); i++) {
+
+        size_t j = 0;
+        for(; j < strlen(target); j++) {
+
+            if(*(source + i + j) != *(target + j)) break;
+        }
+
+        if(j == strlen(target)) return i;
+    }
+
+    return -1;
+}
+
+StringStruct ss_find_and_replace(StringStruct _base, StringStruct _replace_this, StringStruct _with_this) {
+
+    if(_base.count == 0 || _replace_this.count == 0) return _base;
+
+    char buffer[128];
+    memset(buffer, '\0', sizeof(buffer));
+    size_t iterator = 0;
+
+    char base[32];
+    memset(base, '\0', sizeof(base));
+    size_t base_iterator = 0;
+
+    char replace_this[32];
+    memset(replace_this, '\0', sizeof(replace_this));
+    size_t replace_iterator = 0;
+
+    char with_this[32];
+    memset(with_this, '\0', sizeof(with_this));
+    size_t with_iterator = 0;
+
+    /*strncpy(base, _base.data, _base.count);
+    strncpy(replace_this, _replace_this.data, _replace_this.count);
+    strncpy(with_this, _with_this.data, _with_this.count);*/
+
+    snprintf(base, _base.count + 1, "%s", _base.data);
+    snprintf(replace_this, _replace_this.count + 1, "%s", _replace_this.data);
+    snprintf(with_this, _with_this.count + 1, "%s", _with_this.data);
+
+    while(c_find_substring(base + base_iterator, replace_this) != -1) {
+
+        int index = c_find_substring(base + base_iterator, replace_this);
+        
+        strncpy(buffer + iterator, base + base_iterator, index);
+        iterator += index;
+        base_iterator += index + strlen(replace_this);
+        strncpy(buffer + iterator, with_this, strlen(with_this));
+        iterator += strlen(with_this);
+    }
+
+    strncpy(buffer + iterator, base + base_iterator, strlen(base + base_iterator));
+    iterator += strlen(base + base_iterator);
+
+    buffer[iterator] = '\0';
+    
+    StringStruct ret = {0};
+    ret.count = strlen(buffer);
+    ret.data = strdup(buffer);
+    return ret;
+}
+
+StringStruct c_find_and_replace(StringStruct _base, StringStruct _replace_this, char* _with_this) {
+
+    if(_base.count == 0 || _replace_this.count == 0) return _base;
+
+    char buffer[128];
+    memset(buffer, '\0', sizeof(buffer));
+    size_t iterator = 0;
+
+    char base[32];
+    memset(base, '\0', sizeof(base));
+    size_t base_iterator = 0;
+
+    char replace_this[32];
+    memset(replace_this, '\0', sizeof(replace_this));
+    size_t replace_iterator = 0;
+
+    char* with_this = _with_this;
+    size_t with_iterator = 0;
+
+    /*strncpy(base, _base.data, _base.count);
+    strncpy(replace_this, _replace_this.data, _replace_this.count);
+    strncpy(with_this, _with_this.data, _with_this.count);*/
+
+    snprintf(base, _base.count + 1, "%s", _base.data);
+    snprintf(replace_this, _replace_this.count + 1, "%s", _replace_this.data);
+
+    while(c_find_substring(base + base_iterator, replace_this) != -1) {
+
+        int index = c_find_substring(base + base_iterator, replace_this);
+        
+        strncpy(buffer + iterator, base + base_iterator, index);
+        iterator += index;
+        base_iterator += index + strlen(replace_this);
+        strncpy(buffer + iterator, with_this, strlen(with_this));
+        iterator += strlen(with_this);
+    }
+
+    strncpy(buffer + iterator, base + base_iterator, strlen(base + base_iterator));
+    iterator += strlen(base + base_iterator);
+
+    buffer[iterator] = '\0';
+    
+    StringStruct ret = {0};
+    ret.count = strlen(buffer);
+    ret.data = strdup(buffer);
+    return ret;
+}
+
 bool c_isdigit(char character) {
 
     return (character >= '0' && character <= '9');
@@ -438,7 +564,12 @@ bool ss_isnumber(StringStruct ss) {
 
     size_t periods = 0;
 
-    for(int i = 0; i < ss.count; i++) {
+    if(!c_isdigit(c_charat(&ss, 0))) {
+
+        if(c_charat(&ss, 0) != '-') return false;
+    }
+
+    for(int i = 1; i < ss.count; i++) {
 
         if(c_charat(&ss, i) == '.') {
 
@@ -546,6 +677,25 @@ int c_find(StringStruct* ss, char character) {
     int i = 0;
     while(i < ss->count && *(ss->data + i) != character) i++;
     return i == ss->count? -1 : i;
+}
+
+//implement a prefix tree? something better anyways
+int ss_find_substring(StringStruct source, StringStruct target) {
+
+    if(target.count > source.count) return -1;
+
+    for(size_t i = 0; i <= source.count - target.count; i++) {
+
+        size_t j = 0;
+        for(; j < target.count; j++) {
+
+            if(c_charat(&source, i + j) != c_charat(&target, j)) break;
+        }
+        
+        if(j == target.count) return i;
+    }
+
+    return -1;
 }
 
 char c_charat(StringStruct* ss, int index) {

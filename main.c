@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <math.h>
 
 #define _SS_IMPLEMENT
 #include "ss.h"
@@ -601,6 +602,14 @@ Node* perform_syntax_analysis(Table* table) {
                 }
 
                 while(expr.count > 0) {
+                    
+                    //bool negative = false;
+                    if(c_charat(&expr, 0) == '-') {
+
+                        //negative = true;
+                        ss_cut_n(&expr, 1);
+                        expr = ss_trim(expr);
+                    }
 
                     char c = find_first_operator(expr);
                     int out_row = 0;
@@ -610,7 +619,7 @@ Node* perform_syntax_analysis(Table* table) {
 
                         //ima operator
 
-                        StringStruct token = ss_cut_by_delim(&expr, c);
+                        StringStruct token = ss_trim(ss_cut_by_delim(&expr, c));
                         expr = ss_trim(expr); //ready the next token
 
                         if(expr.count == 0) { //posle cuttovanja operatora nema nista -> dangling operator
@@ -663,7 +672,7 @@ Node* perform_syntax_analysis(Table* table) {
                     } else {
 
                         //ceo ostatak je token                          //+1 to make sure its the entire thing
-                        StringStruct token = ss_cut_n(&expr, expr.count + 1);
+                        StringStruct token = ss_trim(ss_cut_n(&expr, expr.count + 1));
                         assert(expr.count == 0);
 
                         if(ss_isnumber(token)) {} //do nothing if its a number
@@ -835,9 +844,7 @@ void stack_push(ElementStack* stack, Element element) {
 Element stack_pop(ElementStack* stack) {
 
     if(stack->count > 0) {
-        
-        Element ret = stack->elements[stack->count--];
-        return ret;
+        return stack->elements[--stack->count];;
     }
 
     Element inv = INVALID_ELEMENT;
@@ -849,63 +856,235 @@ Element stack_pop(ElementStack* stack) {
     .elements = {0},        \
     .first = 0,             \
     .last = 0,              \
+    .count = 0              \
 }
 
 typedef struct {
     Element elements[ELEMENT_QUEUE_SIZE];
     size_t first;
     size_t last;
+    size_t count;
 } ElementQueue;
 
 void queue_push(ElementQueue* queue, Element element) {
 
     assert(queue->last < ELEMENT_QUEUE_SIZE);
     queue->elements[queue->last++] = element;
+    queue->count++;
 }
 
 Element queue_pop(ElementQueue* queue) {
 
     if(queue->last - queue->first != 0) {
 
-        queue->first++;
-        return queue->elements[queue->first - 1];
+        queue->count--;
+        return queue->elements[queue->first++];
     }
     
     Element inv = INVALID_ELEMENT;
     return inv;
 }
 
-void solve_equation_with_numbers(Table* table, Node* node) {
+bool stack_top_higher_precedence(ElementStack* stack, Element operator) {
+
+    if(stack->count == 0) return false;
+
+    Element op = stack->elements[stack->count - 1];
+
+    if(operator.as.operator == '+' || operator.as.operator == '-') {
+
+        if(op.as.operator == '+' || op.as.operator == '-') return false;
+        else return true;
+    }
+    else if(operator.as.operator == '*' || operator.as.operator == '/') {
+
+        if(op.as.operator == '^') return true;
+        else return false;
+    }
+    else return false;
+}
+
+double shunting_yard(StringStruct* sseq) {
+
+    ElementStack stack = STACK_INIT;
+    ElementQueue queue = QUEUE_INIT;
+
+    while(sseq->count > 0) {
+
+        bool negative = false;
+        if(c_charat(sseq, 0) == '-') {
+
+            negative = true;
+            ss_cut_n(sseq, 1);
+            *sseq = ss_trim(*sseq);
+        }
+
+        if(find_first_operator(*sseq) != '\0') { //postoji operator
+
+            StringStruct number = ss_trim(ss_cut_to_delim(sseq, find_first_operator(*sseq)));
+            
+            Element num = {
+
+                .kind = ELEMENT_NUM,
+                .as.number = ss_tod(number)
+            };
+
+            if(negative) num.as.number *= -1;
+
+            queue_push(&queue, num); //enqueue the number
+
+            Element operator = {
+
+                .kind = ELEMENT_OP,
+                .as.operator = c_charat(sseq, 0)
+            };
+
+            ss_cut_n(sseq, 1);
+            *sseq = ss_trim(*sseq);
+
+            while(stack.count > 0 && stack_top_higher_precedence(&stack, operator)) {
+
+                Element popped_operator = stack_pop(&stack);
+                queue_push(&queue, popped_operator);
+            }
+
+            stack_push(&stack, operator);
+        }
+        else {
+
+            StringStruct number = ss_trim(ss_cut_n(sseq, sseq->count + 1));
+
+            Element num = {
+
+                .kind = ELEMENT_NUM,
+                .as.number = ss_tod(number)
+            };
+
+            if(negative) num.as.number *= -1;
+
+            queue_push(&queue, num); //enqueue the number
+        }
+    }
+
+    while(stack.count > 0) {
+
+        Element popped = stack_pop(&stack);
+        queue_push(&queue, popped);
+    }
+
+    assert(stack.count == 0);
+
+    while(queue.count > 0) {
+
+        Element popped1 = queue_pop(&queue);
+
+        if(popped1.kind == ELEMENT_NUM) stack_push(&stack, popped1);
+        else if(popped1.kind == ELEMENT_OP) {
+
+            switch(popped1.as.operator) {
+
+                case '^': {
+
+                    Element ret = {
+
+                        .kind = ELEMENT_NUM,
+                        .as.number = pow(stack.elements[stack.count - 2].as.number, stack.elements[stack.count - 1].as.number)
+                    };
+
+                    stack_pop(&stack);
+                    stack_pop(&stack);
+
+                    stack_push(&stack, ret);
+                    break;
+                }
+
+                case '*': {
+
+                    Element ret = {
+
+                        .kind = ELEMENT_NUM,
+                        .as.number = stack.elements[stack.count - 2].as.number * stack.elements[stack.count - 1].as.number
+                    };
+
+                    stack_pop(&stack);
+                    stack_pop(&stack);
+
+                    stack_push(&stack, ret);
+                    break;
+                }
+
+                case '/': {
+
+                    Element ret = {
+
+                        .kind = ELEMENT_NUM,
+                        .as.number = stack.elements[stack.count - 2].as.number / stack.elements[stack.count - 1].as.number
+                    };
+
+                    stack_pop(&stack);
+                    stack_pop(&stack);
+
+                    stack_push(&stack, ret);
+                    break;
+                }
+
+                case '+': {
+
+                    Element ret = {
+
+                        .kind = ELEMENT_NUM,
+                        .as.number = stack.elements[stack.count - 2].as.number + stack.elements[stack.count - 1].as.number
+                    };
+
+                    stack_pop(&stack);
+                    stack_pop(&stack);
+
+                    stack_push(&stack, ret);
+                    break;
+                }
+
+                case '-': {
+
+                    Element ret = {
+
+                        .kind = ELEMENT_NUM,
+                        .as.number = stack.elements[stack.count - 2].as.number - stack.elements[stack.count - 1].as.number
+                    };
+
+                    stack_pop(&stack);
+                    stack_pop(&stack);
+
+                    stack_push(&stack, ret);
+                    break;
+                }
+
+                default: {
+
+                    assert(0 && "Unreachable code.");
+                }
+            }
+        }
+    }
+
+    Element solution = stack_pop(&stack);
+    return solution.as.number;
+}
+
+
+double solve_equation_with_numbers(Table* table, Node* node) {
 
     assert(table != NULL && node != NULL);
 
     Cell* target_cell = cell_at(table, node->row, node->col);
-    assert(target_cell != NULL);
 
     StringStruct e = target_cell->as.expression.expr;
     ss_cut_n(&e, 1); //strip off the '=' sign
     e = ss_trim(e);
 
-    //vrti sve dok ima operatora
-
-    //     5 / 9 - 6 * 7 / 2 + 8
-    // 5 / 9
-    //5
-
-    ElementStack stack = {0};
-
-
-
-    //shunting_yard()
-
-    
-    
-
-    //now theres only 1 number in the SS
-
+    return shunting_yard(&e);
 }
 
-float solve_expression(Table* table, Node* node) {
+double solve_expression(Table* table, Node* node) {
 
     Cell* target_cell = cell_at(table, node->row, node->col);
     assert(target_cell != NULL);
@@ -917,13 +1096,14 @@ float solve_expression(Table* table, Node* node) {
 
         case KIND_NUM: {
 
-            break;
+            return target_cell->as.number;
         }
 
         case KIND_EXPR: {
 
-            solve_equation_with_numbers(table, node);
-            break;
+            target_cell->kind = KIND_NUM;
+            target_cell->as.number =  solve_equation_with_numbers(table, node);
+            return target_cell->as.number;
         }
 
         default: {
@@ -933,7 +1113,95 @@ float solve_expression(Table* table, Node* node) {
     }
 }
 
-void dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
+//returns the pointer to a referenced cell and its name in SS format
+/*Node* find_next_cell_reference(Table* table, StringStruct equation, StringStruct* out_reference) {
+
+    for(size_t i = 0; i < equation.count; i++) {
+
+        if(c_isupper(c_charat(&equation, i))) {
+
+            int col = c_charat(&equation, i) - 'A';
+            
+            size_t upperBound = i + 4;
+            if(upperBound > equation.count)
+                upperBound = equation.count;
+
+            char buffer[5];
+            sprintf(buffer, "%c", 'A' + col);
+
+            for(size_t j = i + 1; j < upperBound; j++) {
+
+                if(c_isdigit(c_charat(&equation, j)))
+                    sprintf(buffer + j - i, "%c", c_charat(&equation, j));
+                else break;
+            }
+
+            //now theres a number in the buffer that represents the row
+            double row = strtod(buffer + 1, NULL);
+            //cant be invalid since its already being checked during syntax analysis
+            assert(row >= 0 && row <= 1000);
+
+            if(out_reference) *out_reference = ss_form_string_nt(buffer);
+
+            return cell_at(table, row, col);
+        }
+        else continue;
+    }
+
+    return NULL;
+}*/
+
+StringStruct d_find_and_replace(StringStruct _base, StringStruct _replace_this, double _with_this) {
+
+    if(_base.count == 0 || _replace_this.count == 0) return _base;
+
+    char buffer[128];
+    memset(buffer, '\0', sizeof(buffer));
+    size_t iterator = 0;
+
+    char base[32];
+    memset(base, '\0', sizeof(base));
+    size_t base_iterator = 0;
+
+    char replace_this[32];
+    memset(replace_this, '\0', sizeof(replace_this));
+    size_t replace_iterator = 0;
+
+    char with_this[32];
+    memset(with_this, '\0', sizeof(with_this));
+    size_t with_iterator = 0;
+
+    /*strncpy(base, _base.data, _base.count);
+    strncpy(replace_this, _replace_this.data, _replace_this.count);
+    strncpy(with_this, _with_this.data, _with_this.count);*/
+
+    snprintf(base, _base.count + 1, "%s", _base.data);
+    snprintf(replace_this, _replace_this.count + 1, "%s", _replace_this.data);
+    sprintf(with_this, "%.04lf", _with_this);
+
+    while(c_find_substring(base + base_iterator, replace_this) != -1) {
+
+        int index = c_find_substring(base + base_iterator, replace_this);
+        
+        strncpy(buffer + iterator, base + base_iterator, index);
+        iterator += index;
+        base_iterator += index + strlen(replace_this);
+        strncpy(buffer + iterator, with_this, strlen(with_this));
+        iterator += strlen(with_this);
+    }
+
+    strncpy(buffer + iterator, base + base_iterator, strlen(base + base_iterator));
+    iterator += strlen(base + base_iterator);
+
+    buffer[iterator] = '\0';
+    
+    StringStruct ret = {0};
+    ret.count = strlen(buffer);
+    ret.data = strdup(buffer);
+    return ret;
+}
+
+double dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
 
     assert(root != NULL);
 
@@ -941,15 +1209,26 @@ void dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
 
     //a cell can depend on a node thats either an expression or a number
 
+    //starting from here, find and replace all cell references with their solutions
+
     for(size_t i = 0; i < root->count; i++) {
 
         if(!was_visited(root->dependencies[i], visited)) {
+            
+            //child's name
+            char buffer[5];
+            sprintf(buffer, "%c", 'A' + root->dependencies[i]->col);
+            sprintf(buffer + 1, "%d", root->dependencies[i]->row);
+            StringStruct cell_ref = ss_form_string_nt(buffer);
+            
+            Cell* parent_cell = cell_at(table, root->row, root->col);
 
-            dfs_solve(table, root->dependencies[i], visited);
+            parent_cell->as.expression.expr = d_find_and_replace(parent_cell->as.expression.expr, cell_ref, dfs_solve(table, root->dependencies[i], visited));
         }
     }
 
-    solve_expression(table, root);
+    return solve_expression(table, root);
+    
 }
 
 void solve_expressions(Table* table, Node* root) {
@@ -1113,9 +1392,6 @@ void solve_table(Table* table) {
         return;
     }
 
-
-
-
     printf(ANSI_GREEN "\n[SOLVE] Solving..." ANSI_RESET"\n");
 
     solve_expressions(table, root);
@@ -1184,37 +1460,15 @@ int main(int argc, char* argv[]) {
     solve_table(&table);
     
     print_table(&table);
-    //print_table_kind(&table);
+    print_table_kind(&table);
 
-    Element e1 = {
-        .kind = ELEMENT_NUM,
-        .as.number = 5
-    };
-    Element e2 = {
-        .kind = ELEMENT_NUM,
-        .as.number = 6
-    };
-    Element e3 = {
-        .kind = ELEMENT_NUM,
-        .as.number = 10
-    };
-    Element e4 = {
-        .kind = ELEMENT_NUM,
-        .as.number = 8
-    };
-    
-    ElementStack stack = STACK_INIT;
-    stack_push(&stack, e1);
-    stack_push(&stack, e2);
-    stack_push(&stack, e3);
-    stack_push(&stack, e4);
+    /*StringStruct source = SS("aleksa");
+    StringStruct target = SS("k");
+    double with = 50;
 
-    PRINT_ELEMENT(stack_pop(&stack));
-    PRINT_ELEMENT(stack_pop(&stack));
-    PRINT_ELEMENT(stack_pop(&stack));
-    PRINT_ELEMENT(stack_pop(&stack));
-    printf("%d", sizeof(Element));
+    StringStruct a = d_find_and_replace(source, target, with);
+    printf(SSFormat, SSArg(a));*/
 
-
+   
     return 0;
 }
