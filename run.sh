@@ -1,6 +1,6 @@
 #!/bin/bash
 set -xe
 
-gcc -g -O0 main.c -o main -lm
+make
 
-./main input.csv #| tee output.csv
+./abcellute input.csv #| tee output.csv

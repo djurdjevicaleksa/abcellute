@@ -130,6 +130,8 @@ StringStruct ss_copy_n(StringStruct ss, size_t n);
 */
 StringStruct ss_append(StringStruct base, StringStruct addition);
 
+int c_find_substring(char* source, char* target);
+
 /*
     Replaces all occurences of `replace_this` with `with_this`. Returned SS must be freed manualy as this is a heavy and temporary function.
 */
@@ -266,6 +268,7 @@ char c_charat(StringStruct* ss, int index);
 #include <aio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 size_t len(const char* string) {
 
