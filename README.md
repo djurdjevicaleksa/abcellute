@@ -32,12 +32,14 @@ $   ./main <input.csv>
 
 
 ## Allowed expressions
-Every expression must start with a `=` sign. Other than that, you can do basically anyting involving numbers and cell references(A0, J17...).
-Valid cell references are `A10`, `J57`, `B999`. Invalid cell references look like `A 10`, `J   5  7`, `B1000`.
-Brackets are not implemented. Allowed operations are `+`, `-`, `*`, `/` and `^`. Supports negative numbers. (`A8 * - A6`).
+Every expression must start with a `=` sign. Other than that, you can do basically anyting involving numbers and cell references(`A0`, `J17`...).
+Valid cell references are `A10`, `J57`, `B999`. Invalid cell references look like `A 10`, 
+`J   5  7`, `B1000`.
+Brackets are not implemented. Allowed operations are `+`, `-`, `*`, `/` and `^`.
+ Supports negative numbers. (`A8 * - A6`).
 
 ## Colours
-To colour in a cell, type `#` and then uppercase name of the colour. Supported colours are WHITE, BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA and CYAN.
+To colour in a cell, type `#` and then uppercase name of the colour. Supported colours are `WHITE`, `BLACK`, `RED`, `GREEN`, `YELLOW`, `BLUE`, `MAGENTA` and `CYAN`.
 
 # Uses
 This program uses [StringStruct](https://github.com/djurdjevicaleksa/ss) to handle string stuff, although being slightly modified to do the job.
