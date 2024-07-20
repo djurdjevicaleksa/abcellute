@@ -1,11 +1,12 @@
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "table.h"
 #include "constants.h"
 
-int max_cell_width = 0;
+int max_cell_width = 3;
 int expression_count = 0; //for dynamic allocation of graph nodes later
 
 
@@ -109,8 +110,22 @@ void calculate_new_cell_width(Table* table) {
             else if(current_cell->kind == KIND_NUM) {
 
                 char buffer[32];
-                sprintf(buffer, "%.*lf", DECIMAL_PLACES, current_cell->as.number);
-                if(new_cell_width < strlen(buffer)) new_cell_width = strlen(buffer);
+                memset(buffer, '\0', sizeof(buffer));
+                sprintf(buffer, "%lf", current_cell->as.number);
+
+                //handling based on number being an int or double
+                size_t length_to_period = 0;
+
+                while(*(buffer + length_to_period) != '\0' && *(buffer + length_to_period) != '.') {
+
+                    length_to_period++;
+                }
+
+                if(fabs(current_cell->as.number - (int)current_cell->as.number) > 0) { //if its a float
+                    length_to_period += DECIMAL_PLACES;
+                }
+                
+                if(new_cell_width < length_to_period) new_cell_width = length_to_period;
             }
             else if(current_cell->kind == KIND_EXPR) {
 
@@ -119,33 +134,36 @@ void calculate_new_cell_width(Table* table) {
         }
     }
 
-    new_cell_width += 2;
-    max_cell_width = new_cell_width;   
+    new_cell_width += EXTRA_CELL_SPACE;
+    max_cell_width = new_cell_width;
 }
 
-void print_cell(Cell* cell) {
+void print_cell(Cell* cell, FILE* drain) {
 
     switch(cell->kind) {
 
         case KIND_EMPTY: {
 
-            printf("%*.s|", max_cell_width, " ");
+            fprintf(drain, "%*.s|", max_cell_width, " ");
             return;
         }
 
         case KIND_NUM: {
             
-            if(cell->as.number - (int)cell->as.number > 0)
-                printf("%*.*f|", max_cell_width, DECIMAL_PLACES, cell->as.number);
-            else
-                printf("%*.d|", max_cell_width, (int)cell->as.number);
+            if(fabs(cell->as.number - (int)cell->as.number) > 0) {
 
+                fprintf(drain, "%*.*f|", max_cell_width, DECIMAL_PLACES, cell->as.number);
+            }
+            else {
+
+                fprintf(drain, "%*d|", max_cell_width, (int)cell->as.number);
+            }
             return;
         }
 
         case KIND_TEXT: {
 
-            printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.text.count, " ",  SSArg(cell->as.text));
+            fprintf(drain, "%*.s"SSFormat"|", max_cell_width - (int)cell->as.text.count, " ",  SSArg(cell->as.text));
             return;
         }
 
@@ -153,10 +171,17 @@ void print_cell(Cell* cell) {
 
             if(cell->as.expression.kind == EXPR_INVALID) {
 
-                printf(ANSI_RED "%*.s"SSFormat ANSI_RESET "|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+                if(drain == stdout) {
+
+                    fprintf(drain, ANSI_RED "%*.s"SSFormat ANSI_RESET "|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+                }
+                else {
+
+                    fprintf(drain, "%*.s"SSFormat "|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+                }
             } else {
 
-                printf("%*.s"SSFormat"|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
+                fprintf(drain, "%*.s"SSFormat"|", max_cell_width - (int)cell->as.expression.expr.count, " ", SSArg(cell->as.expression.expr));
             }
             
             return;
@@ -164,9 +189,17 @@ void print_cell(Cell* cell) {
 
         case KIND_COLOUR: {
             
-            printf(SSFormat, SSArg(cell->as.colour));
-            for(int i = 0; i < max_cell_width; i++) printf("%s", "\u2588");
-            printf(ANSI_RESET"|");
+            if(drain == stdout) {
+
+                fprintf(drain, SSFormat, SSArg(cell->as.colour));
+                for(int i = 0; i < max_cell_width; i++) printf("%s", "\u2588");
+                fprintf(drain, ANSI_RESET"|");
+            }
+            else {
+
+                for(int i = 0; i < max_cell_width; i++) fprintf(drain, "%c", '#');
+                fprintf(drain, "|");
+            }
 
             break;
         }
@@ -273,7 +306,7 @@ bool is_colour(StringStruct token_copy, StringStruct* out_colour) {
     }
     else return false;
 }
-
+// values last as long as "char* content" lasts.
 void populate_table(Table* table, StringStruct input) {
 
     for(int rows = 0; input.count > 0; rows++) {
@@ -320,9 +353,9 @@ void populate_table(Table* table, StringStruct input) {
     max_cell_width += EXTRA_CELL_SPACE;
 }
 
-void print_table(Table* table) {
+void print_table(Table* table, FILE* drain) {
 
-    printf("\n LE |");
+    fprintf(drain, "\n LE |");
 
     int left_padding = 0;
     int right_padding = 0;
@@ -341,27 +374,27 @@ void print_table(Table* table) {
 
     for(int i = 0; i < table->cols; i++) { // columns header
 
-        printf("%*s%c%*s|", left_padding, " ", 'A' + i, right_padding, " ");
+        fprintf(drain, "%*s%c%*s|", left_padding, " ", 'A' + i, right_padding, " ");
     }
 
-    printf("\n");
-    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); //line separator
-    printf("\n");
+    fprintf(drain, "\n");
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) fprintf(drain, "%c", '-'); //line separator
+    fprintf(drain, "\n");
 
     for(int row = 0; row < table->rows; row++) {
 
-        printf("|%*d|", 3, row); //row separator
+        fprintf(drain, "|%*d|", 3, row); //row separator
 
         for(int col = 0; col < table->cols; col++) {
 
-            print_cell(cell_at(table, row, col));
+            print_cell(cell_at(table, row, col), drain);
         }
-        printf("\n");
+        fprintf(drain, "\n");
     }
     
 
-    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) printf("%c", '-'); //line separator
-    printf("\n");
+    for(int i = 0; i < table->cols * (max_cell_width + 1) + 5; i++) fprintf(drain, "%c", '-'); //line separator
+    fprintf(drain, "\n");
 }
 
 void print_table_kind(Table* table) {

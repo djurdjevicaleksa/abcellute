@@ -14,6 +14,7 @@ double solve_expression(Table* table, Node* node);
 StringStruct d_find_and_replace(StringStruct _base, StringStruct _replace_this, double _with_this);
 double dfs_solve(Table* table, Node* root, VisitedNodes* visited);
 void solve_expressions(Table* table, Node* root);
+void solve_table(Table* table);
 
 
 

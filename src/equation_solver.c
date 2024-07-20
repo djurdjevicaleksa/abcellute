@@ -8,6 +8,7 @@
 #include "ss.h"
 #include "table.h"
 #include "graph.h"
+#include "invalid_dependency.h"
 
 bool stack_top_higher_precedence(ElementStack* stack, Element operator) {
 
@@ -309,18 +310,23 @@ double dfs_solve(Table* table, Node* root, VisitedNodes* visited) {
     //starting from here, find and replace all cell references with their solutions
 
     for(size_t i = 0; i < root->count; i++) {
+        
+        //child's name
+        char buffer[5];
+        sprintf(buffer, "%c", 'A' + root->dependencies[i]->col);
+        sprintf(buffer + 1, "%d", root->dependencies[i]->row);
+        StringStruct cell_ref = ss_form_string_nt(buffer);
+            
+        Cell* parent_cell = cell_at(table, root->row, root->col);
+        Cell* child_cell = cell_at(table, root->dependencies[i]->row, root->dependencies[i]->col);
 
         if(!was_visited(root->dependencies[i], visited)) {
             
-            //child's name
-            char buffer[5];
-            sprintf(buffer, "%c", 'A' + root->dependencies[i]->col);
-            sprintf(buffer + 1, "%d", root->dependencies[i]->row);
-            StringStruct cell_ref = ss_form_string_nt(buffer);
-            
-            Cell* parent_cell = cell_at(table, root->row, root->col);
-
             parent_cell->as.expression.expr = d_find_and_replace(parent_cell->as.expression.expr, cell_ref, dfs_solve(table, root->dependencies[i], visited));
+        }
+        else {
+
+            parent_cell->as.expression.expr = d_find_and_replace(parent_cell->as.expression.expr, cell_ref, child_cell->as.number);
         }
     }
 
@@ -339,4 +345,33 @@ void solve_expressions(Table* table, Node* root) {
             dfs_solve(table, root->dependencies[i], &visited);
         }
     }
+}
+
+void solve_table(Table* table) {
+
+    Node* root = perform_syntax_analysis(table);
+
+    if(root->count == 0) {
+
+        printf(ANSI_GREEN "\n[SOLVE] There is nothing to solve.\n" ANSI_RESET);
+        return;
+    }
+
+    if(cycles_exist(root)) {
+
+        printf(ANSI_BOLD_RED"\n[SOLVE] Terminated abnormally.\n" ANSI_RESET);
+        return;
+    }
+
+    if(invalid_dependencies_exist(table, root)) {
+
+        printf(ANSI_BOLD_RED"\n[SOLVE] Terminated abnormally.\n" ANSI_RESET);
+        return;
+    }
+
+    printf(ANSI_GREEN "\n[SOLVE] No errors found. Solving..." ANSI_RESET"\n");
+
+    solve_expressions(table, root);
+
+    calculate_new_cell_width(table);
 }

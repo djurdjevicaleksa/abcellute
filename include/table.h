@@ -45,11 +45,12 @@ void approx_table_size(StringStruct input, int* out_rows, int* out_cols);
 Table alloc_table(int rows, int cols);
 Cell* cell_at(Table* table, int row, int col);
 void calculate_new_cell_width(Table* table);
-void print_cell(Cell* cell);
+void print_cell(Cell* cell, FILE* drain);
 void print_cell_kind(Cell* cell);
 void populate_table(Table* table, StringStruct input);
-void print_table(Table* table);
+void print_table(Table* table, FILE* drain);
 void print_table_kind(Table* table);
 bool token_iscellref(Table* table, StringStruct token, int* out_row, int* out_column);
+bool is_colour(StringStruct token_copy, StringStruct* out_colour);
 
 #endif //_TABLE_H
